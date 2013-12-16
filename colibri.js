@@ -135,8 +135,8 @@ ColibriFocus.prototype._makeConference = function () {
     var contents = SDPUtil.find_lines(localSDP.raw, 'a=mid:').map(SDPUtil.parse_mid);
     localSDP.media.forEach(function (media, channel) {
         var name = SDPUtil.parse_mid(SDPUtil.find_line(media, 'a=mid:'));
-        elem.c('content', {creator: 'initiator', name: name});
-        elem.c('channel', {initiator: 'false'});
+        elem.c('content', {name: name});
+        elem.c('channel', {initiator: 'false', expire: '15'});
 
         // FIXME: should reuse code from .toJingle
         var mline = SDPUtil.parse_mline(media.split('\r\n')[0]);
@@ -177,7 +177,7 @@ ColibriFocus.prototype._makeConference = function () {
         }
         elem.up(); // end of channel
         for (j = 0; j < ob.peers.length; j++) {
-            elem.c('channel', {initiator: 'true' }).up();
+            elem.c('channel', {initiator: 'true', expire:'15' }).up();
         }
         elem.up(); // end of content
     });
@@ -401,8 +401,8 @@ ColibriFocus.prototype.addNewParticipant = function (peer) {
     var localSDP = new SDP(this.peerconnection.localDescription.sdp);
     var contents = SDPUtil.find_lines(localSDP.raw, 'a=mid:').map(SDPUtil.parse_mid);
     contents.forEach(function (name) {
-        elem.c('content', {creator: 'initiator', name: name});
-        elem.c('channel', {initiator: 'true'});
+        elem.c('content', {name: name});
+        elem.c('channel', {initiator: 'true', expire:'15'});
         elem.up(); // end of channel
         elem.up(); // end of content
     });
@@ -429,8 +429,7 @@ ColibriFocus.prototype.updateChannel = function (remoteSDP, participant) {
     change.c('conference', {xmlns: 'http://jitsi.org/protocol/colibri', id: this.confid});
     for (channel = 0; channel < this.channels[participant].length; channel++) {
         change.c('content', {name: channel === 0 ? 'audio' : 'video'});
-        change.c('channel', {id: $(this.channels[participant][channel]).attr('id'), initiator: 'true'});
-        console.log('channel id', $(this.channels[participant][channel]).attr('id'));
+        change.c('channel', {id: $(this.channels[participant][channel]).attr('id')});
 
         var rtpmap = SDPUtil.find_lines(remoteSDP.media[channel], 'a=rtpmap:');
         rtpmap.forEach(function (val) {
@@ -587,7 +586,7 @@ ColibriFocus.prototype.addIceCandidate = function (session, elem) {
         var channel = name == 'audio' ? 0 : 1; // FIXME: search mlineindex in localdesc
 
         change.c('content', {name: name});
-        change.c('channel', {id: $(ob.channels[participant][channel]).attr('id'), initiator: 'true'});
+        change.c('channel', {id: $(ob.channels[participant][channel]).attr('id')});
         $(this).find('>transport').each(function () {
             change.c('transport', {
                 ufrag: $(this).attr('ufrag'),
@@ -631,7 +630,7 @@ ColibriFocus.prototype.sendIceCandidate = function (candidate) {
     var mycands = $iq({to: this.bridgejid, type: 'set'});
     mycands.c('conference', {xmlns: 'http://jitsi.org/protocol/colibri', id: this.confid});
     mycands.c('content', {name: candidate.sdpMid });
-    mycands.c('channel', {id: $(this.mychannel[candidate.sdpMLineIndex]).attr('id'), initiator: 'true'});
+    mycands.c('channel', {id: $(this.mychannel[candidate.sdpMLineIndex]).attr('id')});
     mycands.c('transport', {xmlns: 'urn:xmpp:jingle:transports:ice-udp:1'});
     tmp = SDPUtil.candidateToJingle(candidate.candidate);
     mycands.c('candidate', tmp).up();
@@ -659,8 +658,24 @@ ColibriFocus.prototype.terminate = function (session, reason) {
     }
     // remove from this.peers
     this.peers.splice(participant, 1);
-    // and from channels -- this wil timeout on the bridge
-    // FIXME: this suggests keeping parallel arrays is wrong
+    // expire channel on bridge
+    var change = $iq({to: this.bridgejid, type: 'set'});
+    change.c('conference', {xmlns: 'http://jitsi.org/protocol/colibri', id: this.confid});
+    for (var channel = 0; channel < this.channels[participant].length; channel++) {
+        change.c('content', {name: channel === 0 ? 'audio' : 'video'});
+        change.c('channel', {id: $(this.channels[participant][channel]).attr('id'), expire: '0'});
+        change.up(); // end of channel
+        change.up(); // end of content
+    }
+    this.connection.sendIQ(change,
+        function (res) {
+            console.log('got result');
+        },
+        function (err) {
+            console.log('got error');
+        }
+    );
+    // and remove from channels
     this.channels.splice(participant, 1);
 
     // tell everyone about the ssrcs to be removed
