@@ -72,7 +72,7 @@ ColibriFocus.prototype.makeConference = function (peers) {
         ob.channels.push([]);
     });
 
-    this.peerconnection = new RTC.peerconnection(this.connection.jingle.ice_config, this.connection.jingle.pc_constraints);
+    this.peerconnection = new TraceablePeerConnection(this.connection.jingle.ice_config, this.connection.jingle.pc_constraints);
     this.peerconnection.addStream(this.connection.jingle.localStream);
     this.peerconnection.oniceconnectionstatechange = function (event) {
         console.warn('ice connection state changed to', ob.peerconnection.iceConnectionState);
@@ -132,9 +132,8 @@ ColibriFocus.prototype._makeConference = function () {
     elem.c('conference', {xmlns: 'http://jitsi.org/protocol/colibri'});
 
     var localSDP = new SDP(this.peerconnection.localDescription.sdp);
-    var contents = SDPUtil.find_lines(localSDP.raw, 'a=mid:').map(SDPUtil.parse_mid);
     localSDP.media.forEach(function (media, channel) {
-        var name = SDPUtil.parse_mid(SDPUtil.find_line(media, 'a=mid:'));
+        var name = SDPUtil.parse_mline(media.split('\r\n')[0]).media; 
         elem.c('content', {name: name});
         elem.c('channel', {initiator: 'false', expire: '15'});
 
@@ -401,8 +400,8 @@ ColibriFocus.prototype.addNewParticipant = function (peer) {
     var elem = $iq({to: this.bridgejid, type: 'get'});
     elem.c('conference', {xmlns: 'http://jitsi.org/protocol/colibri', id: this.confid});
     var localSDP = new SDP(this.peerconnection.localDescription.sdp);
-    var contents = SDPUtil.find_lines(localSDP.raw, 'a=mid:').map(SDPUtil.parse_mid);
-    contents.forEach(function (name) {
+    localSDP.media.forEach(function (media, channel) {
+        var name = SDPUtil.parse_mline(media.split('\r\n')[0]).media; 
         elem.c('content', {name: name});
         elem.c('channel', {initiator: 'true', expire:'15'});
         elem.up(); // end of channel
