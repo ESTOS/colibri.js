@@ -94,6 +94,15 @@ ColibriFocus.prototype.makeConference = function (peers) {
     };
     this.peerconnection.onaddstream = function (event) {
         ob.remoteStream = event.stream;
+        // search the jid associated with this stream
+        Object.keys(ob.remotessrc).forEach(function (jid) {
+            if (ob.remotessrc[jid].join('\r\n').indexOf('mslabel:' + event.stream.id) != -1) {
+                event.peerjid = jid;
+                if (ob.connection.jingle.jid2session[jid]) {
+                    ob.connection.jingle.jid2session[jid].remotestream = event.stream;
+                }
+            }
+        });
         $(document).trigger('remotestreamadded.jingle', [event, ob.sid]);
     };
     this.peerconnection.onicecandidate = function (event) {
@@ -234,15 +243,15 @@ ColibriFocus.prototype.createdConference = function (result) {
         if (tmp.length) {
             bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'cname:mixed' + '\r\n';
             bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'label:mixedlabela0' + '\r\n';
-            bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'msid:mixedmslabela0 mixedlabela0' + '\r\n';
-            bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'mslabel:mixedmslabela0' + '\r\n';
+            bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'msid:mixedmslabel mixedlabela0' + '\r\n';
+            bridgeSDP.media[channel] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'mslabel:mixedmslabel' + '\r\n';
         } else {
             // make chrome happy... '3735928559' == 0xDEADBEEF
             // FIXME: this currently appears as two streams, should be one
             bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'cname:mixed' + '\r\n';
             bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'label:mixedlabelv0' + '\r\n';
-            bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'msid:mixedmslabelv0 mixedlabelv0' + '\r\n';
-            bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'mslabel:mixedmslabelv0' + '\r\n';
+            bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'msid:mixedmslabel mixedlabelv0' + '\r\n';
+            bridgeSDP.media[channel] += 'a=ssrc:' + '3735928559' + ' ' + 'mslabel:mixedmslabel' + '\r\n';
         }
 
         // FIXME: should take code from .fromJingle
@@ -328,14 +337,14 @@ ColibriFocus.prototype.initiate = function (peer, isInitiator) {
         if (tmp.length) {
             sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'cname:mixed' + '\r\n';
             sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'label:mixedlabela0' + '\r\n';
-            sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'msid:mixedmslabela0 mixedlabela0' + '\r\n';
-            sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'mslabel:mixedmslabela0' + '\r\n';
+            sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'msid:mixedmslabel mixedlabela0' + '\r\n';
+            sdp.media[j] += 'a=ssrc:' + tmp.attr('ssrc') + ' ' + 'mslabel:mixedmslabel' + '\r\n';
         } else {
             // make chrome happy... '3735928559' == 0xDEADBEEF
             sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'cname:mixed' + '\r\n';
             sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'label:mixedlabelv0' + '\r\n';
-            sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'msid:mixedmslabelv0 mixedlabelv0' + '\r\n';
-            sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'mslabel:mixedmslabelv0' + '\r\n';
+            sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'msid:mixedmslabel mixedlabelv0' + '\r\n';
+            sdp.media[j] += 'a=ssrc:' + '3735928559' + ' ' + 'mslabel:mixedmslabel' + '\r\n';
         }
 
         tmp = chan.find('>transport[xmlns="urn:xmpp:jingle:transports:ice-udp:1"]');
@@ -370,7 +379,7 @@ ColibriFocus.prototype.initiate = function (peer, isInitiator) {
     sess.localStream = this.connection.jingle.localStream;
     sess.media_constraints = this.connection.jingle.media_constraints;
     sess.pc_constraints = this.connection.jingle.pc_constraints;
-    sess.ice_config = this.connection.ice_config;
+    sess.ice_config = this.connection.jingle.ice_config;
 
     this.connection.jingle.sessions[sess.sid] = sess;
     this.connection.jingle.jid2session[sess.peerjid] = sess;
@@ -481,11 +490,11 @@ ColibriFocus.prototype.updateChannel = function (remoteSDP, participant) {
 // tell everyone about a new participants a=ssrc lines (isadd is true)
 // or a leaving participants a=ssrc lines
 // FIXME: should not take an SDP, but rather the a=ssrc lines and probably a=mid
-ColibriFocus.prototype.sendSSRCUpdate = function (sdp, exclude, isadd) {
+ColibriFocus.prototype.sendSSRCUpdate = function (sdp, jid, isadd) {
     var ob = this;
     this.peers.forEach(function (peerjid) {
-        if (peerjid == exclude) return;
-        console.log('tell', peerjid, 'about ' + (isadd ? 'new' : 'removed') + ' ssrcs from', exclude);
+        if (peerjid == jid) return;
+        console.log('tell', peerjid, 'about ' + (isadd ? 'new' : 'removed') + ' ssrcs from', jid);
         if (!ob.remotessrc[peerjid]) {
             // FIXME: this should only send to participants that are stable, i.e. who have sent a session-accept
             // possibly, this.remoteSSRC[session.peerjid] does not exist yet
@@ -650,7 +659,6 @@ ColibriFocus.prototype.terminate = function (session, reason) {
     if (!this.remotessrc[session.peerjid] || participant == -1) {
         return;
     }
-    console.log('remote ssrcs:', this.remotessrc[session.peerjid]);
     var ssrcs = this.remotessrc[session.peerjid];
     for (var i = 0; i < ssrcs.length; i++) {
         if (!this.removessrc[i]) this.removessrc[i] = '';
