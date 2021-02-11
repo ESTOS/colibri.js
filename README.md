@@ -4,7 +4,7 @@ colibri.js
 colibri.js is a COLIBRI focus 
 The COLIBRI spec has been submitted to the [XMPP Standards Foundation](http://xmpp.org)
 for publications as a XMPP extensions:
-http://xmpp.org/extensions/inbox/colibri.html
+https://xmpp.org/extensions/xep-0340.html
 
 colibri.js is a participating focus, i.e. the focus participates
 in the conference. The conference itself can be ad-hoc, through a
